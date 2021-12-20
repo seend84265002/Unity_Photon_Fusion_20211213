@@ -4,6 +4,7 @@ using Fusion;               //引用Fusion
 using Fusion.Sockets;
 using System.Collections.Generic;
 using System;
+using UnityEngine.SceneManagement;
 
 //INetworkRunnerCallbacks 連線執行器回呼介面，Runner 執行器處理行為後會回呼此介面的方法
 /// <summary>
@@ -16,13 +17,31 @@ public class BasicSpawner : MonoBehaviour,INetworkRunnerCallbacks
     [Header("創建與加入房間欄位")]
     public InputField inputFieldCreatRoom;
     public InputField inputFieldJoinRoom;
-    [Header("玩家控制元件")]
-    public GameObject goPlayer;
+    [Header("玩家控制元件，連線預置物")]
+    public NetworkPrefabRef goPlayer;
+    [Header("畫布連線")]
+    public GameObject goCanvas;
+    [Header("版本文字")]
+    public Text textVersion;
+    [Header("玩家生成位置")]
+    public Transform[] traSpawnPoints;
 
     /// <summary>
     /// 玩家輸入房間名稱
     /// </summary>
     private string roomNameInput;
+    /// <summary>
+    /// 連線的執行器
+    /// </summary>
+    private NetworkRunner runner;
+    private string stringVersion = "Wen Copyringht 2021. | Version";
+    #endregion
+    #region 事件
+    private void Awake()
+    {
+        //Screen.SetResolution(1920, 1080, false);              //Unity解析度更改
+        textVersion.text = stringVersion + Application.version;
+    }
     #endregion
     #region 方法
     /// <summary>
@@ -31,13 +50,37 @@ public class BasicSpawner : MonoBehaviour,INetworkRunnerCallbacks
     public void BtnCreateRoom()
     {
         roomNameInput = inputFieldCreatRoom.text;
+
         Debug.Log("創建房間:" + roomNameInput);
+        StartGame(GameMode.Host);
     }
     public void BtnJoinRoom()
     {
         roomNameInput = inputFieldJoinRoom.text;
         Debug.Log("加入房間:"+roomNameInput);
+        StartGame(GameMode.Client);
+    }
+    //async 非同步處理 : 執行系統時處理連線
+    /// <summary>
+    /// 開始執行連線
+    /// </summary>
+    /// <param name="mode">連線模式 主機 客戶</param>
+    private async void StartGame(GameMode mode)
+    {
+        print("<color=yellow>開始連線</color>");
+        runner = gameObject.AddComponent<NetworkRunner>();  //連線執行器 = 添加元件<連線執行器>
+        runner.ProvideInput = true;                         //連線執行器.是否輸出 = 是
 
+        //等待連線 :　遊戲連線模式，房間名稱，連線後的場景，場景管理器
+        await runner.StartGame(new StartGameArgs()
+        {
+            GameMode = mode,
+            SessionName = roomNameInput,
+            Scene = SceneManager.GetActiveScene().buildIndex,
+            SceneObjectProvider = gameObject.AddComponent<NetworkSceneManagerDefault>()
+        });
+        print("<color=yellow>連線完成</color>");
+        goCanvas.SetActive(false);
     }
     #endregion
 
@@ -66,25 +109,60 @@ public class BasicSpawner : MonoBehaviour,INetworkRunnerCallbacks
     {
         
     }
-
+    /// <summary>
+    /// 玩家連線輸入行為
+    /// </summary>
+    /// <param name="runner">連線執行器</param>
+    /// <param name="input">輸入資訊</param>
     public void OnInput(NetworkRunner runner, NetworkInput input)
     {
-        
+        NetworkinputData inputData = new NetworkinputData();            //新增 連線輸入資料 結構
+        #region 自訂輸入按鍵與移動資訊
+        if (Input.GetKey(KeyCode.W)) inputData.direction += Vector3.forward;    
+        if (Input.GetKey(KeyCode.S)) inputData.direction += Vector3.back;
+        if (Input.GetKey(KeyCode.A)) inputData.direction += Vector3.left;
+        if (Input.GetKey(KeyCode.D)) inputData.direction += Vector3.right;
+        //if (Input.GetKeyDown(KeyCode.Space)) inputData.direction += Vector3.up;
+
+        inputData.inputFire = Input.GetKey(KeyCode.Mouse0);             //左鍵 發射 子彈
+        #endregion
+        input.Set(inputData);                                           //輸入資訊.設定(連線輸入資料)
     }
 
     public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input)
     {
         
     }
-
+    /// <summary>
+    /// 玩家資料集合: 玩家參考資訊，玩家連線物件
+    /// </summary>
+    private Dictionary<PlayerRef, NetworkObject> players = new Dictionary<PlayerRef, NetworkObject>();
+    /// <summary>
+    /// 當玩家成功加入房間後
+    /// </summary>
+    /// <param name="runner">連線的執行器</param>
+    /// <param name="player">玩家資訊</param>
     public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
-        
+        //var position = new Vector3(UnityEngine.Random.Range(-20.0f, 20.0f), 0, UnityEngine.Random.Range(-20.0f, 20.0f));
+        //隨機生成點=Unity 的隨機範圍(0,生成位置數量)
+        int randomSpawnPoint = UnityEngine.Random.Range(0, traSpawnPoints.Length);
+        //連線執行時，連線專用 動態生成物件(物件，座標，角度，玩家資訊)
+        NetworkObject playerNetworkObject = runner.Spawn(goPlayer, traSpawnPoints[randomSpawnPoint].position , Quaternion.identity, player);
+        //將玩家參考 資料與玩家連線物件添加到字典集合內
+        players.Add(player, playerNetworkObject);
     }
-
+    /// <summary>
+    /// 當玩家離開房間後
+    /// </summary>
     public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
     {
-        
+        //如果 離開的玩家連線物件 存在 就刪除
+        if (players.TryGetValue(player,out NetworkObject playerNetworkObject))
+        {
+            runner.Despawn(playerNetworkObject);    //連線執行器，取消生成(該玩家連線物件移除)
+            players.Remove(player);                 //玩家集合，移除(該玩家)    
+        }
     }
 
     public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ArraySegment<byte> data)
