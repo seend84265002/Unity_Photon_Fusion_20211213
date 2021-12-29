@@ -122,11 +122,21 @@ public class BasicSpawner : MonoBehaviour,INetworkRunnerCallbacks
         if (Input.GetKey(KeyCode.S)) inputData.direction += Vector3.back;
         if (Input.GetKey(KeyCode.A)) inputData.direction += Vector3.left;
         if (Input.GetKey(KeyCode.D)) inputData.direction += Vector3.right;
-        //if (Input.GetKeyDown(KeyCode.Space)) inputData.direction += Vector3.up;
+ 
 
         inputData.inputFire = Input.GetKey(KeyCode.Mouse0);             //左鍵 發射 子彈
         #endregion
+        #region 滑鼠座標處理
+        inputData.positionMouse = Input.mousePosition;                          //取的滑鼠座標
+        inputData.positionMouse.z = 60;                                         //設定滑鼠座標Z軸 可以打到3D物件 ，大於攝影機的Y
+
+        Vector3 mouseToWorld = Camera.main.ScreenToWorldPoint(inputData.positionMouse);     //透過API 將滑鼠轉為世界座標
+        inputData.positionMouse = mouseToWorld;                                             //儲存轉換後的滑鼠座標
+        #endregion
+
         input.Set(inputData);                                           //輸入資訊.設定(連線輸入資料)
+
+
     }
 
     public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input)
